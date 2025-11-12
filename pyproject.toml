@@ -16,8 +16,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/pravar/vector-db"
-Documentation = ""
+Homepage = "https://github.com/pravar1919/vector_db_1807"
+Documentation = "https://github.com/pravar1919/vector_db_1807"
 
 [tool.hatch.build.targets.sdist]
 include = ["vector_db_1807", "README.md", "LICENSE"]
