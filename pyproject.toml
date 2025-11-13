@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vector-db-1807"
-version = "0.4.1"
+version = "0.4.2"
 description = "Async + Sync Python SDK for the Vector Database API"
 authors = [{ name = "Pravar Sharma", email = "pravar.sharma@gmail.com" }]
 license = { text = "MIT" }
