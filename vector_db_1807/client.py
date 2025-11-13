@@ -5,7 +5,8 @@ from .exceptions import APIError
 
 class VectorClient:
     """
-    Synchronous SDK client for your Vector Database API.
+    Synchronous Python SDK for your Vector Database API.
+    Enforces metadata['text'] for RAG consistency.
     """
 
     def __init__(
@@ -22,39 +23,71 @@ class VectorClient:
             "Content-Type": "application/json",
         }
 
-    # -------------------------------
-    # Core Methods
-    # -------------------------------
-
+    # -------------------------------------------------------
+    # Add Vector (strict metadata.text requirement)
+    # -------------------------------------------------------
     def add_vector(
-        self, embedding: List[float], metadata: Optional[Dict[str, Any]] = None
+        self,
+        embedding: List[float],
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+
+        # ----------- Validate metadata ----------- #
+        if metadata is None:
+            raise ValueError(
+                "metadata is required.\n"
+                "Example:\n"
+                'db.add_vector(embedding, metadata={"text": "full chunk text"})'
+            )
+
+        if "text" not in metadata or not metadata["text"]:
+            raise ValueError(
+                "metadata['text'] is required and cannot be empty.\n"
+                "This text is used for RAG context in search results."
+            )
+
+        payload = {
+            "embedding": embedding,
+            "metadata": metadata,
+        }
+
         res = requests.post(
             f"{self.base_url}/vector/add",
-            json={"embedding": embedding, "metadata": metadata or {}},
+            json=payload,
             headers=self.headers,
             timeout=self.timeout,
         )
+
         return self._handle_response(res)
 
+    # -------------------------------------------------------
+    # Search Vectors
+    # -------------------------------------------------------
     def search(
         self,
         query_vector: List[float],
         top_k: int = 5,
         filters: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+
+        payload = {
+            "query_vector": query_vector,
+            "top_k": top_k,
+            "filters": filters or {},
+        }
+
         res = requests.post(
             f"{self.base_url}/vector/search",
-            json={
-                "query_vector": query_vector,
-                "top_k": top_k,
-                "filters": filters or {},
-            },
+            json=payload,
             headers=self.headers,
             timeout=self.timeout,
         )
+
         return self._handle_response(res)
 
+    # -------------------------------------------------------
+    # Index Ops
+    # -------------------------------------------------------
     def save_index(self) -> Dict[str, Any]:
         res = requests.post(
             f"{self.base_url}/vector/index/save",
@@ -71,10 +104,9 @@ class VectorClient:
         )
         return self._handle_response(res)
 
-    # -------------------------------
+    # -------------------------------------------------------
     # Internal Helpers
-    # -------------------------------
-
+    # -------------------------------------------------------
     def _handle_response(self, res: requests.Response) -> Dict[str, Any]:
         try:
             data = res.json()

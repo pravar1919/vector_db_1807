@@ -5,7 +5,8 @@ from .exceptions import APIError
 
 class AsyncVectorClient:
     """
-    Asynchronous SDK client for your Vector Database API.
+    Asynchronous Python SDK client for your Vector Database API.
+    Enforces metadata['text'] for RAG behavior.
     """
 
     def __init__(
@@ -16,71 +17,95 @@ class AsyncVectorClient:
     ):
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
-        self.timeout = timeout
-        self._client = httpx.AsyncClient(timeout=self.timeout)
 
-    # -------------------------------
-    # Core Methods
-    # -------------------------------
-
-    async def add_vector(
-        self, embedding: List[float], metadata: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        res = await self._client.post(
-            f"{self.base_url}/vector/add",
-            json={"embedding": embedding, "metadata": metadata or {}},
+        self.client = httpx.AsyncClient(
+            base_url=self.base_url,
             headers=self.headers,
+            timeout=self.timeout,
         )
+
+    # -------------------------------------------------------
+    # ADD VECTOR (strict metadata["text"])
+    # -------------------------------------------------------
+    async def add_vector(
+        self,
+        embedding: List[float],
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+
+        # ---------- Validate metadata ---------- #
+        if metadata is None:
+            raise ValueError(
+                "metadata is required.\n"
+                "Example:\n"
+                'await db.add_vector(embedding, metadata={"text": "full content"})'
+            )
+
+        if "text" not in metadata or not metadata["text"]:
+            raise ValueError(
+                "metadata['text'] is required and cannot be empty.\n"
+                "This is the document text used for RAG context."
+            )
+
+        payload = {
+            "embedding": embedding,
+            "metadata": metadata,
+        }
+
+        res = await self.client.post("/vector/add", json=payload)
         return self._handle_response(res)
 
+    # -------------------------------------------------------
+    # SEARCH
+    # -------------------------------------------------------
     async def search(
         self,
         query_vector: List[float],
         top_k: int = 5,
         filters: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        res = await self._client.post(
-            f"{self.base_url}/vector/search",
-            json={
-                "query_vector": query_vector,
-                "top_k": top_k,
-                "filters": filters or {},
-            },
-            headers=self.headers,
-        )
+
+        payload = {
+            "query_vector": query_vector,
+            "top_k": top_k,
+            "filters": filters or {},
+        }
+
+        res = await self.client.post("/vector/search", json=payload)
         return self._handle_response(res)
 
+    # -------------------------------------------------------
+    # INDEX OPS
+    # -------------------------------------------------------
     async def save_index(self) -> Dict[str, Any]:
-        res = await self._client.post(
-            f"{self.base_url}/vector/index/save", headers=self.headers
-        )
+        res = await self.client.post("/vector/index/save")
         return self._handle_response(res)
 
     async def load_index(self) -> Dict[str, Any]:
-        res = await self._client.post(
-            f"{self.base_url}/vector/index/load", headers=self.headers
-        )
+        res = await self.client.post("/vector/index/load")
         return self._handle_response(res)
 
+    # -------------------------------------------------------
+    # Cleanup
+    # -------------------------------------------------------
     async def aclose(self):
-        """Close persistent HTTP connection."""
-        await self._client.aclose()
+        await self.client.aclose()
 
-    # -------------------------------
-    # Internal Helpers
-    # -------------------------------
-
+    # -------------------------------------------------------
+    # Internal helpers
+    # -------------------------------------------------------
     def _handle_response(self, res: httpx.Response) -> Dict[str, Any]:
         try:
             data = res.json()
         except Exception:
-            raise APIError(res.status_code, "Invalid JSON response")
+            raise APIError(res.status_code, "Invalid JSON response from server")
 
-        if res.is_error:
+        if not res.is_success:
             message = data.get("detail") or data.get("error") or res.reason_phrase
             raise APIError(res.status_code, message)
 
